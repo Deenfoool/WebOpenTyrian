@@ -4,6 +4,18 @@ Experimental browser port of **OpenTyrian2000** (C + SDL2 → Emscripten/WebAsse
 
 **Current status:** The `main` branch contains build scripts, not a prebuilt playable game. Publishing needs an actual successful build of `dist/` and browser testing. The code changes alone cannot make the game playable on GitHub Pages.
 
+## Build using GitHub Codespaces (without installing Docker)
+
+On the repository page, choose **Code → Codespaces → Create codespace on main**. The included devcontainer uses the same pinned Emscripten toolchain as Docker. In the Codespaces terminal run:
+
+```bash
+bash scripts/build.sh
+python3 -m unittest discover -s tests -p 'test_*.py'
+python3 -m http.server 8080 --directory dist
+```
+
+Open the forwarded port 8080, play-test the game, then run `bash scripts/publish-pages.sh`. Codespaces usage depends on your GitHub account limits and permissions.
+
 ## Build (recommended: Linux / WSL2 + Docker)
 
 Install Docker, then clone this repository and run:

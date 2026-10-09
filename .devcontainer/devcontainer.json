@@ -1,0 +1,12 @@
+{
+  "name": "WebOpenTyrian WebAssembly",
+  "image": "emscripten/emsdk:4.0.12",
+  "remoteUser": "root",
+  "forwardPorts": [8080],
+  "portsAttributes": {
+    "8080": {
+      "label": "WebOpenTyrian preview"
+    }
+  },
+  "postCreateCommand": "emcc --version && python3 --version"
+}
