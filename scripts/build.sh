@@ -1,45 +1,55 @@
 #!/usr/bin/env bash
-# Build a standalone GitHub Pages site from the WebAssembly-ready OpenTyrian2000 fork.
+# Build the complete static WebAssembly site; no GitHub Actions required.
 set -Eeuo pipefail
 cd "$(dirname "$0")/.."
 
 for tool in git curl python3 emcc; do
   if ! command -v "$tool" >/dev/null 2>&1; then
-    echo "Missing required tool: $tool" >&2
+    printf 'Required tool is missing: %s (or use bash scripts/build-docker.sh)\n' "$tool" >&2
     exit 1
   fi
 done
 
 SOURCE_REPO="${SOURCE_REPO:-https://github.com/aescarcha/opentyrian-wasm.git}"
+# Fixed revision of the wasm-enabled fork, not a moving main branch.
+SOURCE_REV="${SOURCE_REV:-b17ae7174d4a195223f9b6b9dc3f5a1916d06a75}"
 WORK="${WORK:-$PWD/.work}"
-mkdir -p "$WORK" dist
-if [[ ! -d "$WORK/source/.git" ]]; then
-  git clone --depth 1 "$SOURCE_REPO" "$WORK/source"
-fi
+mkdir -p "$WORK"
+WORK="$(cd "$WORK" && pwd)"
 SOURCE="$WORK/source"
+
+if [[ ! -d "$SOURCE/.git" ]]; then
+  git clone --depth 1 --no-tags "$SOURCE_REPO" "$SOURCE"
+fi
+if [[ "$(git -C "$SOURCE" rev-parse HEAD)" != "$SOURCE_REV" ]]; then
+  git -C "$SOURCE" fetch --depth 1 origin "$SOURCE_REV"
+  git -C "$SOURCE" checkout --detach "$SOURCE_REV"
+fi
 if [[ ! -f "$SOURCE/src/opentyr.c" || ! -f "$SOURCE/COPYING" ]]; then
-  echo "Unexpected source repository layout" >&2
+  echo 'Unsupported OpenTyrian source checkout' >&2
   exit 1
 fi
 
-# Do not commit game data to this repository. Download the freeware release at build time.
 DATA_ZIP="${TYRIAN_ZIP:-$WORK/tyrian2000.zip}"
 if [[ ! -f "$DATA_ZIP" ]]; then
-  curl --fail --location --retry 3 --retry-all-errors --silent --show-error \
+  echo 'Downloading the Tyrian 2000 freeware data archive...'
+  curl --fail --location --retry 3 --retry-delay 2 --silent --show-error \
     'https://www.camanis.net/tyrian/tyrian2000.zip' -o "$DATA_ZIP"
 fi
 python3 scripts/prepare_data.py "$DATA_ZIP" "$WORK/game-data"
 
-# libSDL2 (Emscripten port) is provided by emcc. The original program uses
-# blocking SDL timing and emscripten_sleep(), so Asyncify is necessary.
-# Source's file.c reads from /data and config.c writes to IDBFS-mounted /saves.
-# IMPORTANT: we compile the fork rather than the unmodified native OpenTyrian.
+mkdir -p dist
+# Old build products must never be mistaken for newly compiled artifacts.
+rm -f dist/index.html dist/index.js dist/index.wasm dist/index.data
 shopt -s nullglob
 sources=("$SOURCE"/src/*.c)
 if (( ${#sources[@]} == 0 )); then
-  echo 'No C sources found' >&2; exit 1
+  echo 'No C sources found' >&2
+  exit 1
 fi
 
+# SDL2 supplies the display, sound and input; Asyncify permits blocking game loops.
+# The fork uses /data for resources and /saves for its IDBFS save directory.
 emcc "${sources[@]}" \
   -O2 -std=gnu99 -DNDEBUG -DTARGET_EMSCRIPTEN \
   '-DOPENTYRIAN_VERSION="web"' \
@@ -54,19 +64,28 @@ emcc "${sources[@]}" \
   --shell-file web/shell.html \
   -o dist/index.html
 
-# Keep corresponding GPL source and exact revision alongside the binary.
 cp "$SOURCE/COPYING" dist/COPYING.txt
-SOURCE_REPO="$SOURCE_REPO" git -C "$SOURCE" rev-parse HEAD > dist/source-commit.txt
+git -C "$SOURCE" rev-parse HEAD > dist/source-commit.txt
 python3 - "$SOURCE" <<'PY'
 from pathlib import Path
-import sys, zipfile
-s = Path(sys.argv[1]); out = Path('dist/source-code.zip')
-with zipfile.ZipFile(out, 'w', zipfile.ZIP_DEFLATED) as z:
-    for p in [*s.glob('src/**/*'), s/'COPYING', s/'Makefile.emscripten', s/'shell.html']:
-        if p.is_file(): z.write(p, p.relative_to(s))
-    for p in [*Path('scripts').glob('*'), Path('web/shell.html')]:
-        if p.is_file(): z.write(p, 'site/' + str(p))
-PY
+import sys
+import zipfile
 
+source = Path(sys.argv[1])
+with zipfile.ZipFile('dist/source-code.zip', 'w', zipfile.ZIP_DEFLATED) as z:
+    for path in sorted(source.glob('src/**/*')):
+        if path.is_file():
+            z.write(path, path.relative_to(source))
+    for name in ('COPYING', 'Makefile.emscripten', 'shell.html', 'README-WASM.md'):
+        path = source / name
+        if path.is_file():
+            z.write(path, name)
+    for path in sorted(Path('scripts').glob('*')):
+        if path.is_file():
+            z.write(path, 'site/' + str(path))
+    for path in (Path('web/shell.html'), Path('tests/check_dist.py'), Path('README.md')):
+        z.write(path, 'site/' + str(path))
+PY
 touch dist/.nojekyll
-printf 'Build successful: %s\n' "$PWD/dist/index.html"
+python3 tests/check_dist.py dist
+echo "Build complete: $PWD/dist/index.html"

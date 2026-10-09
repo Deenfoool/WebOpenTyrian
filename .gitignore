@@ -1,0 +1,6 @@
+# Local Emscripten worktree, build outputs and downloaded freeware data
+.work/
+dist/
+__pycache__/
+*.py[cod]
+.DS_Store

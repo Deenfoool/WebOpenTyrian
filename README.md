@@ -1,50 +1,58 @@
-# WebOpenTyrian (experimental)
+# WebOpenTyrian
 
-A **browser/WebAssembly build pipeline**, plus a standalone HTML shell and GitHub Pages workflow, for the GPL-2.0 OpenTyrian2000 fork. The upstream C game is **not** reimplemented in JavaScript.
+Experimental browser port of **OpenTyrian2000** (C + SDL2 → Emscripten/WebAssembly). The repository contains reproducible build and manual GitHub Pages publishing tools, not the original game source.
 
-> ⚠️ Status: this repository contains the integration code, **not a verified playable binary**. The actual Emscripten compilation must run in GitHub Actions or on a computer with `emcc`; browser testing is still required.
+**Current status:** The `main` branch contains build scripts, not a prebuilt playable game. Publishing needs an actual successful build of `dist/` and browser testing. The code changes alone cannot make the game playable on GitHub Pages.
 
-## Быстрый запуск в своём GitHub
+## Build (recommended: Linux / WSL2 + Docker)
 
-1. Загрузите **всё содержимое** этой папки в пустой репозиторий `Deenfoool/WebOpenTyrian` (включая скрытую папку `.github`), в ветку `main`.
-2. Откройте **Settings → Pages → Build and deployment → Source → GitHub Actions**.
-3. Откройте **Actions → Build and publish WebOpenTyrian → Run workflow**, если сборка не запустилась автоматически при push.
-4. После **зелёной** сборки сайт будет доступен по адресу `https://deenfoool.github.io/WebOpenTyrian/` (с учётом настройки Pages). Архив сайта появится в Artifacts выполнения.
-
-Если сборка красная — смотрите логи Actions. Это экспериментальный порт; успех не гарантирован.
-
-## Локальная сборка (Linux/macOS/WSL)
-
-Нужны Git, Python 3, curl и активированный [Emscripten SDK](https://emscripten.org/docs/getting_started/downloads.html).
+Install Docker, then clone this repository and run:
 
 ```bash
-source /path/to/emsdk/emsdk_env.sh
-bash scripts/build.sh
-python3 tests/check_dist.py dist
+git clone https://github.com/Deenfoool/WebOpenTyrian.git
+cd WebOpenTyrian
+bash scripts/build-docker.sh
 python3 -m http.server 8080 --directory dist
 ```
 
-Откройте `http://localhost:8080`, кликните на игровую область для фокуса и звука. Не открывайте `index.html` через `file://` — браузер заблокирует загрузку `.wasm` и `.data`.
+Open **http://localhost:8080/** in a browser. Do not open `dist/index.html` through `file://`. Docker uses a pinned Emscripten `emscripten/emsdk:4.0.12` image, downloads the pinned upstream commit and the freeware Tyrian 2000 data. A first build requires internet access and Docker.
 
-## Что собирается
+Alternatively, with Emscripten SDK activated (`emcc` in PATH), run `bash scripts/build.sh` directly. Set `TYRIAN_ZIP=/path/to/tyrian2000.zip` to reuse an existing archive, and `EMSDK_IMAGE` to change the Docker image.
 
-- Исходники: [aescarcha/opentyrian-wasm](https://github.com/aescarcha/opentyrian-wasm), форк OpenTyrian2000 с поддержкой `__EMSCRIPTEN__` (игровые исходники под GPL-2.0).
-- Emscripten компилирует C-код в `index.wasm`, а SDL2 подключает отображение/клавиатуру/звук.
-- Включён Asyncify для игры с блокирующими вызовами и `emscripten_sleep`.
-- Ресурсы скачиваются при сборке из [архива freeware Tyrian 2000](https://www.camanis.net/tyrian/tyrian2000.zip), нормализуются в lowercase и упаковываются в `index.data` по адресу `/data`.
-- Сохранения: IDBFS в `/saves` (IndexedDB), с периодической синхронизацией и отдельной кнопкой.
-- Сетевой режим **не** поддерживается. Работа на мобильных устройствах не гарантирована.
+## Deploy to GitHub Pages (no GitHub Actions)
 
-## Технические особенности и ограничения
+After building and testing locally:
 
-- Upstream форк имеет `Makefile.emscripten`, который ссылается на `web/shell.html`, хотя шаблон расположен в корне проекта. Поэтому здесь используется собственный скрипт и собственный HTML-шаблон.
-- Мы **не** храним заранее скомпилированный `.wasm` и оригинальные игровые ресурсы в git.
-- Для воспроизводимости сборки нужен пин версии emsdk и исходного коммита; сейчас workflow использует `latest` и актуальную ветку форка. В готовом сайте записан `source-commit.txt` и вложен `source-code.zip`.
-- Если нет звука — кликните на canvas. Если сохранение не восстановилось — проверьте браузерный IndexedDB и журнал консоли.
-- Интеграция ещё **не проходила реальный запуск через emcc** в среде подготовки: инструмента `emcc` там не было и сеть GitHub недоступна. Проверялись только синтаксис скриптов и локальные тесты обработки ресурсов.
+```bash
+bash scripts/publish-pages.sh
+```
 
-## Лицензия
+This commits **only the contents of `dist/`** to the separate `gh-pages` branch, and pushes without force. Then visit **Settings → Pages → Build and deployment** and choose **Deploy from a branch → gh-pages → /(root) → Save**.
 
-Исходники OpenTyrian2000 находятся под GPL-2.0 (см. `COPYING.txt` в сгенерированном сайте). Соответствующие исходники и скрипты сборки также кладутся в `source-code.zip`. Данные Tyrian 2000 — отдельно распространяемый freeware-контент, **не** GPL; перед публичной публикацией убедитесь, что их условия разрешают такую дистрибуцию.
+Expected URL: **https://deenfoool.github.io/WebOpenTyrian/**. Each new release requires rebuilding and rerunning `publish-pages.sh`. The script checks that compiled files exist, but a real browser test is still required.
 
-Проект основан на [OpenTyrian](https://github.com/opentyrian/opentyrian), [OpenTyrian2000](https://github.com/KScl/opentyrian2000) и [aescarcha/opentyrian-wasm](https://github.com/aescarcha/opentyrian-wasm).
+If publishing from WSL2, ensure `git push` has permission to your GitHub repository. No workflow token or GitHub Actions are used.
+
+## Contents
+
+- `scripts/build.sh` — downloads pinned wasm-enabled fork and freeware data, builds C sources with SDL2/Asyncify, bundles corresponding GPL source.
+- `scripts/build-docker.sh` — repeatable containerized compiler entry point.
+- `scripts/prepare_data.py` — case normalization and archive integrity checks.
+- `scripts/publish-pages.sh` — release publishing from `dist/`.
+- `web/shell.html` — browser shell, fullscreen, keyboard, save button, progress and errors.
+- `tests/` — offline archive tests and checks of build artifacts.
+
+To run tests without compiling the game:
+
+```bash
+python3 -m unittest discover -s tests -p 'test_*.py'
+```
+
+## Known limitations
+
+- A working `.wasm` binary and a complete game session **have not been verified** in this environment (the Emscripten compiler and external downloads are not available here).
+- The wasm fork uses `/data` for assets and IndexedDB-backed `/saves` for save games. Browser audio requires a user click.
+- Mobile and online multiplayer are not validated.
+- The original OpenTyrian2000 fork is licensed under GPL-2.0 and source/COPYING are included with the build. Tyrian 2000 resources have separate freeware terms; **verify permission to redistribute them publicly** before pushing `index.data` to Pages.
+
+Sources: [OpenTyrian](https://github.com/opentyrian/opentyrian), [OpenTyrian2000](https://github.com/KScl/opentyrian2000), [wasm-enabled fork](https://github.com/aescarcha/opentyrian-wasm).
