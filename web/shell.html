@@ -1,0 +1,123 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#101525">
+  <title>WebOpenTyrian — OpenTyrian2000</title>
+  <style>
+    :root { color-scheme: dark; font-family: system-ui, Segoe UI, sans-serif; }
+    * { box-sizing: border-box; }
+    body { margin: 0; min-height: 100vh; background: #090e1c; color: #e7edff; display: grid; place-items: center; }
+    main { width: min(100%, 1060px); padding: 18px; }
+    header, footer { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 12px; }
+    h1 { margin: 0 0 12px; font-size: clamp(22px, 4vw, 30px); letter-spacing: .02em; }
+    .game { position: relative; background: #000; border: 1px solid #33415e; border-radius: 12px; overflow: hidden; }
+    canvas { display: block; width: 100%; height: auto; aspect-ratio: 4/3; max-height: 72vh; object-fit: contain; image-rendering: pixelated; outline: none; }
+    #overlay { position: absolute; inset: 0; display: grid; place-items: center; background: #080b13e8; text-align: center; padding: 18px; }
+    #overlay[hidden] { display: none; }
+    #status { color: #bdc9e1; margin: 14px; }
+    progress { width: min(320px, 85vw); accent-color: #67b8ff; }
+    button { font: inherit; background: #26385e; border: 1px solid #6985bb; color: white; border-radius: 8px; padding: 9px 16px; cursor: pointer; }
+    button:hover { background: #385081; }
+    small { color: #abb8d0; }
+    a { color: #9cc7ff; }
+    #log { font-family: ui-monospace, monospace; font-size: 12px; white-space: pre-wrap; color: #ffc6c6; max-height: 100px; overflow: auto; }
+  </style>
+</head>
+<body>
+<main>
+  <header>
+    <h1>🚀 WebOpenTyrian</h1>
+    <div>
+      <button id="fullscreen" type="button">На весь экран</button>
+      <button id="save" type="button">Сохранить данные</button>
+    </div>
+  </header>
+  <div class="game">
+    <canvas id="canvas" tabindex="0" oncontextmenu="event.preventDefault()"></canvas>
+    <div id="overlay" role="status" aria-live="polite">
+      <div>
+        <h2>OpenTyrian2000</h2>
+        <p id="status">Загрузка WebAssembly и ресурсов игры…</p>
+        <progress id="progress" max="100"></progress>
+      </div>
+    </div>
+  </div>
+  <footer>
+    <small>Стрелки — движение · Пробел — огонь · Enter — смена оружия · Ctrl/Alt — дополнительные пушки.</small>
+    <small><a href="source-code.zip">Исходный код</a> · <a href="COPYING.txt">GPL-2.0</a></small>
+  </footer>
+  <pre id="log" hidden></pre>
+</main>
+<script>
+'use strict';
+const canvas = document.getElementById('canvas');
+const overlay = document.getElementById('overlay');
+const status = document.getElementById('status');
+const progress = document.getElementById('progress');
+const log = document.getElementById('log');
+let saveBusy = false;
+function saveGame() {
+  if (saveBusy || !Module.FS) return;
+  saveBusy = true;
+  Module.FS.syncfs(false, function(err) {
+    saveBusy = false;
+    if (err) console.error('Ошибка сохранения IndexedDB', err);
+  });
+}
+document.getElementById('save').addEventListener('click', saveGame);
+document.getElementById('fullscreen').addEventListener('click', () => {
+  if (document.fullscreenElement) document.exitFullscreen();
+  else canvas.requestFullscreen().catch(console.warn);
+  canvas.focus();
+});
+canvas.addEventListener('click', () => {
+  canvas.focus();
+  // Modern browsers require a user gesture to resume the Web Audio context.
+  try { if (typeof SDL2 !== 'undefined' && SDL2.audioContext) SDL2.audioContext.resume(); } catch (e) {}
+});
+window.addEventListener('keydown', (e) => {
+  if (['ArrowUp','ArrowDown','ArrowLeft','ArrowRight',' '].includes(e.key)) e.preventDefault();
+}, { passive: false });
+document.addEventListener('visibilitychange', () => { if (document.hidden) saveGame(); });
+window.addEventListener('pagehide', saveGame);
+
+var Module = {
+  canvas: canvas,
+  print: (...args) => console.log(...args),
+  printErr: (...args) => {
+    const msg = args.join(' ');
+    console.error(msg);
+    log.hidden = false;
+    log.textContent = (log.textContent + '\n' + msg).slice(-6000);
+  },
+  setStatus: (msg) => {
+    status.textContent = msg || 'Запуск игры…';
+    const match = (msg || '').match(/\((\d+(?:\.\d+)?)\/(\d+)\)/);
+    if (match) progress.value = (100 * Number(match[1])) / Number(match[2]);
+    else progress.removeAttribute('value');
+  },
+  totalDependencies: 0,
+  monitorRunDependencies: function(n) {
+    this.totalDependencies = Math.max(this.totalDependencies, n);
+    this.setStatus(n ? `Подготовка файлов (${this.totalDependencies - n}/${this.totalDependencies})` : 'Запуск игры…');
+  },
+  onRuntimeInitialized: function() {
+    overlay.hidden = true;
+    canvas.focus();
+    setInterval(saveGame, 15000);
+  },
+  onAbort: function(message) {
+    overlay.hidden = false;
+    this.setStatus('Ошибка запуска: ' + message);
+  }
+};
+window.addEventListener('error', (e) => {
+  log.hidden = false;
+  log.textContent += '\n' + (e.message || 'Неизвестная ошибка');
+});
+</script>
+{{{ SCRIPT }}}
+</body>
+</html>
